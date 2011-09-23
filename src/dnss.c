@@ -55,6 +55,19 @@ int main(int argc, char **argv) {
 	/* fork a listener and a sender. listener always listens for dns queries
 		and writes to sender process queue. sender reads queuesz pac
 	*/
+	switch (cPid = fork()) {
+		case 0:
+			return dns_listener();
+			break;
+		case -1:
+			fprintf(stderr, "Error forking\n");
+			exit(EXIT_FAILURE);
+			break;
+		default:
+			return dns_sender();
+			break;
+	}
+	
 }
 
 void print_usage() {
