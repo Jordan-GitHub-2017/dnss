@@ -3,6 +3,9 @@
 #include <string.h>
 #include <getopt.h>
 #include "headers.c"
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 
 int main(int argc, char **argv) {
 		
@@ -10,6 +13,7 @@ int main(int argc, char **argv) {
 	int redirect = 0;
 	int map = 0;
 	int option_ctr = 0;
+	int cPid = 0;
 	char *direction_target = (char *)calloc(SIZE_MAX_FILEN, 1);
 	char *interface = (char *)calloc(SIZE_MAX_NETN, 1);
 	char *target = (char *)calloc(SIZE_IP_STR, 1);
@@ -71,7 +75,7 @@ int main(int argc, char **argv) {
 }
 
 void print_usage() {
-	fprintf(stderr, "dnss -i interface -t target -r|m target|file");
+	fprintf(stderr, "dnss -i interface -t target -r|m target|file\n");
 	exit(EXIT_FAILURE);
 }
 
@@ -79,7 +83,22 @@ void print_usage() {
 	and write and 
 */
 int dns_listener() {
-	return 0;
+	
+   int sockfd;
+   unsigned char *pktBuf = (unsigned char *)malloc(8192);	
+
+   if ((sockfd = socket (PF_INET, SOCK_RAW, IPPROTO_TCP) == -1)) {
+      fprintf(stderr, "Error creating listening socket\n");
+      free(pktBuf);
+      exit(EXIT_FAILURE);
+   }
+
+   while (read(sockfd, pktBuf, 8192) > 0) {
+      
+   }
+	
+   free(pktBuf);
+   return 0;
 }
 
 /* Queue */
