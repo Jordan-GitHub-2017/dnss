@@ -1,0 +1,7 @@
+#ccarlton
+
+This is intended to be a dns cache poisoning tool capable of two types of dns
+spoofing. First by activly sniffing dns queries off the wire in a MITM situation 
+sending spoofed replies. Second by transaction id prediction and udp src port 
+guessing.
+
