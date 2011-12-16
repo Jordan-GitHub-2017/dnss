@@ -184,7 +184,9 @@ int dns_listener(char *interface) {
 		ip_len = 4 * ((ip->ver) & 0x0f);		
 		if (ip->protocol == (char)PROTO_UDP) {
 			udp = (struct udp_header *)(pktBuf + sizeof(struct eth_header) + ip_len);
-			printf("UDP sport: %hu, dport: %hu\n", ntohs(udp->sport), ntohs(udp->dport));
+			if (htons(udp->sport) == PORT_DNS) {
+				printf("UDP sport: %hu, dport: %hu\n", ntohs(udp->sport), ntohs(udp->dport));
+			}
 		}
 	}
 

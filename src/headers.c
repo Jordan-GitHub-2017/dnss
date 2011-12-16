@@ -4,6 +4,7 @@
 #define DNS_REQEST 0
 #define DNS_REPLY  1
 #define PROTO_UDP 17
+#define PORT_DNS  53
 
 struct eth_header {
 	uint32_t dmac;
