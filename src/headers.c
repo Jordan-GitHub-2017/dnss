@@ -7,17 +7,11 @@
 #define PORT_DNS  		53
 #define MAX_PACKET_LEN	8192
 
-#define MAX_SHARED_BUF	100
+#define MAX_PACKET_CT	100
 #define NUM_SEM 			3
 #define SEM_MUTEX 		0
 #define SEM_EMPTY			1
 #define SEM_FULL			2
-
-union semun {
-	int val;
-	struct semid_ds *buf;
-	ushort *array;
-};
 
 struct eth_header {
 	uint32_t dmac;
@@ -54,11 +48,12 @@ struct dns_header{
    uint16_t totalAnswers;
 }__attribute__((packed));
 
-
+int init_semaphores(sem_t **semaphores); 
 int compare_ip(char *target, u_char *cur_ip); 
-int init_semaphores(key_t key); 
 int dns_sender(); 
 int send_dns();
 int build_dns(); 
 void print_usage();
-int dns_listener(char *interface, char *target_ip); 
+int init_packet_buffer(char **pkt_buf);
+int free_packet_buffer(char **pkt_buf); 
+int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pkt_buf); 

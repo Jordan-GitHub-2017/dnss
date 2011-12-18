@@ -1,7 +1,7 @@
 #  @author ccarlton
 CC=gcc
 
-CFLAGS=-Wall -g -pedantic 
+CFLAGS=-Wall -pedantic -g -l pthread 
 LDFLAGS=
 
 ALL=dnss
