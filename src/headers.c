@@ -48,12 +48,3 @@ struct dns_header{
    uint16_t totalAnswers;
 }__attribute__((packed));
 
-int init_semaphores(sem_t **semaphores); 
-int compare_ip(char *target, u_char *cur_ip); 
-int dns_sender(); 
-int send_dns();
-int build_dns(); 
-void print_usage();
-int init_packet_buffer(char **pkt_buf);
-int free_packet_buffer(char **pkt_buf); 
-int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pkt_buf); 

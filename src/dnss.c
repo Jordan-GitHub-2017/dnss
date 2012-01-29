@@ -19,7 +19,12 @@
 #include <fcntl.h>
 #include <net/if.h>
 #include <arpa/inet.h>
+
 #include "headers.c"
+#include "queue.c"
+#include "dnss_defs.c"
+
+int cleanup = 0;
 
 int main(int argc, char **argv) {
 		
@@ -29,15 +34,21 @@ int main(int argc, char **argv) {
 	int option_ctr = 0;
 	int listener_pid = 0;
 	int sender_pid = 0;
+	int intval = 0;	
 	
 	char *direction_target = (char *)calloc(SIZE_MAX_FILEN, 1);
-	char *interface = (char *)calloc(IFNAMSIZ, 1);
+	char *interface = (char *)calloc(IFNAMSIZ, 2);
 	char *target = (char *)calloc(SIZE_IP_STR, 1);
 	char *redirect_target = (char *)calloc(SIZE_IP_STR, 1);
 	char *map_file_name = (char *)calloc(SIZE_MAX_FILEN, 1);  
 	
+	struct queue *qp = (struct queue *)calloc(sizeof(struct queue), 1);
+	qp->size = MAX_PACKET_CT;
+	qp->head = 0;
+	qp->tail = 0;
+	qp->count = 0;
+
 	sem_t *semaphores[3];
-	char **pkt_buf;
 
 	if (geteuid() != 0) {
 		fprintf(stderr, "dnss requires root permissions!\n");
@@ -80,9 +91,11 @@ int main(int argc, char **argv) {
 		}
 	}
 	
-	if (init_packet_buffer(pkt_buf) == -1) 
+	if (init_packet_buffer(qp) == -1) 
 		exit(EXIT_FAILURE);
-  
+
+	printf("qp->ele: %p, pid: %d\n", qp->element, getpid()); 
+ 
    if (init_semaphores(semaphores) == -1) 
 		exit(EXIT_FAILURE);
 
@@ -90,7 +103,7 @@ int main(int argc, char **argv) {
 		and writes to sender process queue. sender reads count packets	*/
 	switch (listener_pid = fork()) {
 		case 0:
-			return dns_listener(interface, target, semaphores, pkt_buf);
+			return dns_listener(interface, target, semaphores, qp, &intval);
 			break;
 		case -1:
 			fprintf(stderr, "Error forking listener\n");
@@ -99,7 +112,7 @@ int main(int argc, char **argv) {
 		default:
 			switch (sender_pid = fork()) {
 				case 0:
-					return dns_sender();
+					return dns_sender(semaphores, qp, &intval);
 					break;
 				case -1:
 					fprintf(stderr, "Error forking sender\n");
@@ -130,7 +143,7 @@ int main(int argc, char **argv) {
 	sem_close(semaphores[SEM_EMPTY]);
 	sem_close(semaphores[SEM_FULL]);
 
-	free_packet_buffer(pkt_buf);
+	free_packet_buffer((char **)qp->element);
 
 	free(direction_target);
 	free(interface);
@@ -141,16 +154,15 @@ int main(int argc, char **argv) {
 	exit(EXIT_SUCCESS);
 }
 
-int init_packet_buffer(char **pkt_buf) {
+int init_packet_buffer(struct queue *qp) {
 	int i;
-	
-	if ((pkt_buf = calloc(MAX_PACKET_CT, sizeof(sem_t *))) == (void *)0) {
+	if ((qp->element = calloc(MAX_PACKET_CT, sizeof(u_char *))) == (void *)0) {
 		perror("Initializing pkt_buf");
 		return -1;
 	}
 
 	for (i = 0; i < MAX_PACKET_CT; i++) {
-		if ((pkt_buf[i] = calloc(MAX_PACKET_LEN, 1)) == (void *)0) {
+		if ((qp->element[i] = calloc(MAX_PACKET_LEN, 1)) == (void *)0) {
 			perror("Initializing pkt_buf");
 			return -1;
 		}	
@@ -170,18 +182,18 @@ int free_packet_buffer(char **pkt_buf) {
 }
 
 int init_semaphores(sem_t **semaphores) {
-	if ((semaphores[SEM_MUTEX] = sem_open("buflock0", O_CREAT, 0644, 1)) == SEM_FAILED) {
+	if ((semaphores[SEM_MUTEX] = sem_open("aaaabuflockd", O_CREAT, 0644, 1)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
 	
-	if ((semaphores[SEM_EMPTY] = sem_open("buflock1", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
+	if ((semaphores[SEM_EMPTY] = sem_open("aaaabuflocke", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 
 	} 
 
-	if ((semaphores[SEM_FULL] = sem_open("buflock2", O_CREAT, 0644, 0)) == SEM_FAILED) {
+	if ((semaphores[SEM_FULL] = sem_open("aaaabuflockf", O_CREAT, 0644, 0)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
@@ -200,7 +212,7 @@ void sigproc(int signo) {
 
 /* Will listen for DNS requests matching a criteria 
 	and write to shared buffer */
-int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pkt_buf) {
+int dns_listener(char *interface, char *target_ip, sem_t **semaphores, struct queue *queue, int *intval) {
 	
    int sockfd;
    struct sockaddr_ll saddr;
@@ -208,9 +220,10 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pk
 	struct ip_header *ip;
 	struct udp_header *udp;
 
-	unsigned char *pktBuf = (unsigned char *)calloc(MAX_PACKET_LEN, 1);	
+	unsigned char *pktBuf = (unsigned char *)calloc(MAX_PACKET_LEN, 2);	
 	
-	signal(SIGHUP, sigproc);	
+	printf("queuep: %p\n\n", queue);
+	//signal(SIGHUP, sigproc);	
 
 	bzero(&saddr, sizeof(saddr));
 	bzero(&ifr, sizeof(ifr));
@@ -242,10 +255,9 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pk
 	}
 	
 	strncpy((char *)ifr.ifr_name, interface, IFNAMSIZ);
-	 
+	
 	while (recvfrom(sockfd, pktBuf, 8192, 0, 0, 0) > 0) {
 		int ip_len;
-		int sem_val;
 
 		ip = (struct ip_header *)(pktBuf + sizeof(struct eth_header));
 		ip_len = 4 * ((ip->ver) & 0x0f);		
@@ -255,12 +267,18 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pk
 			udp = (struct udp_header *)(pktBuf + sizeof(struct eth_header) + ip_len);
 			if (htons(udp->sport) == PORT_DNS) {
 				printf("UDP sport: %hu, dport: %hu\n", ntohs(udp->sport), ntohs(udp->dport));
+				
 				sem_wait(semaphores[SEM_EMPTY]);
 				sem_wait(semaphores[SEM_MUTEX]);			
-				//add to buffer
-				sem_getvalue(semaphores[SEM_FULL], &sem_val);
-				printf("Listener is adding to buffer slot %d\n", sem_val);
-				//pktBuf[0]
+				
+				printf("_______ENQUEUE_____\n");
+				print_buf(pktBuf);	
+				
+				*intval+=1;
+				printf("intval increased to: %d\n", *intval);
+				//if (!enqueue(queue, pktBuf))
+			   //	fprintf(stderr, "Error enqueueing\n");
+	
 				sem_post(semaphores[SEM_MUTEX]);
 				sem_post(semaphores[SEM_FULL]);			
 			}
@@ -274,16 +292,15 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, char **pk
    return 0;
 }
 
-
-
 int compare_ip(char *target, u_char *cur_ip) {
 	int i;
-	char *cur_ip_str = (char *)calloc(SIZE_IP_STR, 1);
-	char *tmp = (char *)calloc(SIZE_IP_STR, 1);
+	char *cur_ip_str = (char *)calloc(SIZE_IP_STR, 2);
+	char *tmp = (char *)calloc(SIZE_IP_STR, 2);
+	return 0;
 
 	for (i=0; i<4; i++) {
 		sprintf(tmp, "%d", cur_ip[i]);
-		strcat(cur_ip_str, tmp);
+		strncat(cur_ip_str, tmp, SIZE_IP_STR);
 		if (i != 3) 
 			strcat(cur_ip_str, ".");
 		memset(tmp, 0, SIZE_IP_STR);
@@ -296,21 +313,36 @@ int compare_ip(char *target, u_char *cur_ip) {
 }
 
 /* Reads dns packets from buffer and respond */
-int dns_sender() {
+int dns_sender(sem_t **semaphores, struct queue *queue, int *intval) {
+	u_char *item = (u_char *)calloc(MAX_PACKET_LEN, 1);
 
-	signal(SIGHUP, sigproc);	
+	printf("queuep: %p\n\n", queue);
+	
+	//signal(SIGHUP, sigproc);	
 	prctl(PR_SET_PDEATHSIG, SIGHUP);
-
+	
 	while(1) {
+		sem_wait(semaphores[SEM_FULL]);
+		sem_wait(semaphores[SEM_MUTEX]);
+	
+		/*if (!dequeue(queue, item)) {
+			fprintf(stderr, "Error dequeuing");		
+		} else {
+			printf("_______DEQUEUE_____________\n");
+			print_buf(item);
+		}*/
+
+		printf("Inval read: %d\n", *intval);
+
+		sem_post(semaphores[SEM_MUTEX]);
+		sem_post(semaphores[SEM_EMPTY]);
 	}
 
 	return 0;
 }
 
 void print_buf(u_char *pkt) {
-	int i = sizeof(struct eth_header);
-
-	printf("%d\n", i );
+	int i = 0;
 	
 	for (i = 0; i < 100; i++) {
 		printf("%x ", pkt[i]);	
