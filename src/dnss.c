@@ -11,6 +11,8 @@
 #include <sys/wait.h>
 #include <sys/socket.h>
 #include <sys/ioctl.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
 
 #include <linux/if_packet.h>
 #include <linux/if_ether.h>
@@ -24,8 +26,6 @@
 #include "queue.c"
 #include "dnss_defs.c"
 
-int cleanup = 0;
-
 int main(int argc, char **argv) {
 		
 	int opt;
@@ -34,27 +34,31 @@ int main(int argc, char **argv) {
 	int option_ctr = 0;
 	int listener_pid = 0;
 	int sender_pid = 0;
-	int intval = 0;	
-	
+	int smem_id = 0;
+	key_t smem_key = 0;	
+	sem_t *semaphores[3];
+
 	char *direction_target = (char *)calloc(SIZE_MAX_FILEN, 1);
 	char *interface = (char *)calloc(IFNAMSIZ, 2);
 	char *target = (char *)calloc(SIZE_IP_STR, 1);
 	char *redirect_target = (char *)calloc(SIZE_IP_STR, 1);
 	char *map_file_name = (char *)calloc(SIZE_MAX_FILEN, 1);  
 	
-	struct queue *qp = (struct queue *)calloc(sizeof(struct queue), 1);
-	qp->size = MAX_PACKET_CT;
-	qp->head = 0;
-	qp->tail = 0;
-	qp->count = 0;
-
-	sem_t *semaphores[3];
-
 	if (geteuid() != 0) {
 		fprintf(stderr, "dnss requires root permissions!\n");
 		exit(EXIT_FAILURE);
 	}
 	
+	if ((smem_key = ftok(SMEM_KEY, SMEM_KEYID)) == -1) {
+		perror("ftok");
+		exit(EXIT_FAILURE);
+	} 	
+	
+	if ((smem_id = shmget(smem_key, MAX_PACKET_LEN * MAX_PACKET_CT + sizeof(struct queue), IPC_CREAT | 0666)) < 0) {
+		perror("shmget");
+		exit(EXIT_FAILURE);
+	} 	
+
 	while ((opt = getopt(argc, argv, "i:t:rm")) != -1) {
 		switch (opt) {
 			case 'i':
@@ -91,11 +95,6 @@ int main(int argc, char **argv) {
 		}
 	}
 	
-	if (init_packet_buffer(qp) == -1) 
-		exit(EXIT_FAILURE);
-
-	printf("qp->ele: %p, pid: %d\n", qp->element, getpid()); 
- 
    if (init_semaphores(semaphores) == -1) 
 		exit(EXIT_FAILURE);
 
@@ -103,7 +102,7 @@ int main(int argc, char **argv) {
 		and writes to sender process queue. sender reads count packets	*/
 	switch (listener_pid = fork()) {
 		case 0:
-			return dns_listener(interface, target, semaphores, qp, &intval);
+			return dns_listener(interface, target, semaphores, smem_id);
 			break;
 		case -1:
 			fprintf(stderr, "Error forking listener\n");
@@ -112,7 +111,7 @@ int main(int argc, char **argv) {
 		default:
 			switch (sender_pid = fork()) {
 				case 0:
-					return dns_sender(semaphores, qp, &intval);
+					return dns_sender(semaphores, smem_id);
 					break;
 				case -1:
 					fprintf(stderr, "Error forking sender\n");
@@ -143,7 +142,7 @@ int main(int argc, char **argv) {
 	sem_close(semaphores[SEM_EMPTY]);
 	sem_close(semaphores[SEM_FULL]);
 
-	free_packet_buffer((char **)qp->element);
+	//free_packet_buffer((char **)qp->element);
 
 	free(direction_target);
 	free(interface);
@@ -152,22 +151,6 @@ int main(int argc, char **argv) {
 	free(map_file_name);
 
 	exit(EXIT_SUCCESS);
-}
-
-int init_packet_buffer(struct queue *qp) {
-	int i;
-	if ((qp->element = calloc(MAX_PACKET_CT, sizeof(u_char *))) == (void *)0) {
-		perror("Initializing pkt_buf");
-		return -1;
-	}
-
-	for (i = 0; i < MAX_PACKET_CT; i++) {
-		if ((qp->element[i] = calloc(MAX_PACKET_LEN, 1)) == (void *)0) {
-			perror("Initializing pkt_buf");
-			return -1;
-		}	
-	}
-	return 0;
 }
 
 int free_packet_buffer(char **pkt_buf) {
@@ -182,18 +165,18 @@ int free_packet_buffer(char **pkt_buf) {
 }
 
 int init_semaphores(sem_t **semaphores) {
-	if ((semaphores[SEM_MUTEX] = sem_open("aaaabuflockd", O_CREAT, 0644, 1)) == SEM_FAILED) {
+	if ((semaphores[SEM_MUTEX] = sem_open("caaddaaaabuflockd", O_CREAT, 0644, 1)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
 	
-	if ((semaphores[SEM_EMPTY] = sem_open("aaaabuflocke", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
+	if ((semaphores[SEM_EMPTY] = sem_open("caaddaaaabuflocke", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 
 	} 
 
-	if ((semaphores[SEM_FULL] = sem_open("aaaabuflockf", O_CREAT, 0644, 0)) == SEM_FAILED) {
+	if ((semaphores[SEM_FULL] = sem_open("caaddaaaabuflockf", O_CREAT, 0644, 0)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
@@ -210,19 +193,41 @@ void sigproc(int signo) {
 	exit(EXIT_FAILURE);
 }
 
+char *get_smem_ptr(int shmid) {
+   char *shm; 
+
+	if ((shm = shmat(shmid, NULL, 0)) == (char *) -1) {
+        perror("shmat");
+        exit(1);
+    }
+	 return shm;
+}
+
+void init_queue(char *smem_ptr) {
+	struct queue *qp;
+	qp = (struct queue *)smem_ptr;
+	
+	qp->tail = 0;
+	qp->head = 0;
+	qp->count = 0;
+	qp->size = 8192;
+	qp->element = (u_char *)smem_ptr + sizeof(struct queue);
+}
+
 /* Will listen for DNS requests matching a criteria 
 	and write to shared buffer */
-int dns_listener(char *interface, char *target_ip, sem_t **semaphores, struct queue *queue, int *intval) {
+int dns_listener(char *interface, char *target_ip, sem_t **semaphores, int smem_id) {
 	
    int sockfd;
    struct sockaddr_ll saddr;
 	struct ifreq ifr;
 	struct ip_header *ip;
 	struct udp_header *udp;
+	char *smem_ptr;
+	struct queue *queue;
 
-	unsigned char *pktBuf = (unsigned char *)calloc(MAX_PACKET_LEN, 2);	
+	unsigned char *pktBuf = (unsigned char *)calloc(MAX_PACKET_LEN+5, 1);	
 	
-	printf("queuep: %p\n\n", queue);
 	//signal(SIGHUP, sigproc);	
 
 	bzero(&saddr, sizeof(saddr));
@@ -231,6 +236,10 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, struct qu
 	if (prctl(PR_SET_PDEATHSIG, SIGHUP) != 0) {
 		fprintf(stderr, "Unable to install parent death sig\n");
 	}
+
+	smem_ptr = get_smem_ptr(smem_id); 
+	init_queue(smem_ptr);
+	queue = (struct queue *)smem_ptr;
 
    if ((sockfd = socket (PF_PACKET, SOCK_RAW, 0)) == -1) {
       perror("Error creating listening socket\n");
@@ -270,14 +279,9 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, struct qu
 				
 				sem_wait(semaphores[SEM_EMPTY]);
 				sem_wait(semaphores[SEM_MUTEX]);			
-				
-				printf("_______ENQUEUE_____\n");
-				print_buf(pktBuf);	
-				
-				*intval+=1;
-				printf("intval increased to: %d\n", *intval);
-				//if (!enqueue(queue, pktBuf))
-			   //	fprintf(stderr, "Error enqueueing\n");
+
+				print_buf(pktBuf);
+				enqueue(queue, pktBuf);				
 	
 				sem_post(semaphores[SEM_MUTEX]);
 				sem_post(semaphores[SEM_FULL]);			
@@ -313,26 +317,19 @@ int compare_ip(char *target, u_char *cur_ip) {
 }
 
 /* Reads dns packets from buffer and respond */
-int dns_sender(sem_t **semaphores, struct queue *queue, int *intval) {
-	u_char *item = (u_char *)calloc(MAX_PACKET_LEN, 1);
+int dns_sender(sem_t **semaphores, int smem_id) {
+	u_char *item = (u_char *)calloc(MAX_PACKET_LEN+5, 1);
+	char *smem_ptr = smem_ptr = get_smem_ptr(smem_id); 
 
-	printf("queuep: %p\n\n", queue);
-	
 	//signal(SIGHUP, sigproc);	
 	prctl(PR_SET_PDEATHSIG, SIGHUP);
 	
 	while(1) {
 		sem_wait(semaphores[SEM_FULL]);
 		sem_wait(semaphores[SEM_MUTEX]);
-	
-		/*if (!dequeue(queue, item)) {
-			fprintf(stderr, "Error dequeuing");		
-		} else {
-			printf("_______DEQUEUE_____________\n");
-			print_buf(item);
-		}*/
 
-		printf("Inval read: %d\n", *intval);
+		dequeue((struct queue *)smem_ptr, item);
+		print_buf(item);
 
 		sem_post(semaphores[SEM_MUTEX]);
 		sem_post(semaphores[SEM_EMPTY]);

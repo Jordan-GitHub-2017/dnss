@@ -1,17 +1,27 @@
+/*File and String sizes */
 #define SIZE_MAX_NETN 	20
 #define SIZE_IP_STR		12
 #define SIZE_MAX_FILEN	60 
+
+/*Ports and Protocols */ 
 #define DNS_REQEST 		0
 #define DNS_REPLY  		1
 #define PROTO_UDP 		17
 #define PORT_DNS  		53
-#define MAX_PACKET_LEN	8192
 
+/*Packet info and queue size */
+#define MAX_PACKET_LEN	8192
 #define MAX_PACKET_CT	100
+
+/* Semaphores */
 #define NUM_SEM 			3
 #define SEM_MUTEX 		0
 #define SEM_EMPTY			1
 #define SEM_FULL			2
+
+/*Shared memory segment*/
+#define SMEM_KEY 			"/home/caleb/dev/c/dnss/dnss/src/dnss"
+#define SMEM_KEYID		'c'
 
 struct eth_header {
 	uint32_t dmac;

@@ -1,10 +1,10 @@
-int init_semaphores(sem_t **semaphores); 
-int compare_ip(char *target, u_char *cur_ip); 
+int init_semaphores(sem_t **); 
+int compare_ip(char *, u_char *); 
 int send_dns();
 int build_dns(); 
 void print_usage();
-int init_packet_buffer(struct queue *qp);
-int free_packet_buffer(char **pkt_buf); 
-int dns_sender(sem_t **semaphores, struct queue *queue, int *intval);
-void print_buf(u_char *pkt);
-int dns_listener(char *interface, char *target_ip, sem_t **semaphores, struct queue *pkt_buffer, int *intval); 
+int init_packet_buffer(struct queue *);
+int free_packet_buffer(char **); 
+int dns_sender(sem_t **, int);
+void print_buf(u_char *);
+int dns_listener(char *, char *, sem_t **, int); 
