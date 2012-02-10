@@ -111,7 +111,7 @@ int main(int argc, char **argv) {
 		default:
 			switch (sender_pid = fork()) {
 				case 0:
-					return dns_sender(semaphores, smem_id);
+					return dns_sender(interface, semaphores, smem_id, target);
 					break;
 				case -1:
 					fprintf(stderr, "Error forking sender\n");
@@ -165,18 +165,18 @@ int free_packet_buffer(char **pkt_buf) {
 }
 
 int init_semaphores(sem_t **semaphores) {
-	if ((semaphores[SEM_MUTEX] = sem_open("caaddaaaabuflockd", O_CREAT, 0644, 1)) == SEM_FAILED) {
+	if ((semaphores[SEM_MUTEX] = sem_open("lock1", O_CREAT, 0644, 1)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
 	
-	if ((semaphores[SEM_EMPTY] = sem_open("caaddaaaabuflocke", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
+	if ((semaphores[SEM_EMPTY] = sem_open("lock2", O_CREAT, 0644, MAX_PACKET_CT)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 
 	} 
 
-	if ((semaphores[SEM_FULL] = sem_open("caaddaaaabuflockf", O_CREAT, 0644, 0)) == SEM_FAILED) {
+	if ((semaphores[SEM_FULL] = sem_open("lock3", O_CREAT, 0644, 0)) == SEM_FAILED) {
 		perror("Semaphore full initialization");
 		return -1;
 	}
@@ -272,17 +272,16 @@ int dns_listener(char *interface, char *target_ip, sem_t **semaphores, int smem_
 		ip_len = 4 * ((ip->ver) & 0x0f);		
 		
 		//Change to dport when done testing in switched environment
-		if (ip->protocol == (char)PROTO_UDP && !compare_ip(target_ip, ip->sip)) {
-			udp = (struct udp_header *)(pktBuf + sizeof(struct eth_header) + ip_len);
+      if (ip->protocol == (char)PROTO_UDP && !compare_ip(target_ip, ip->sip)) {
+		   udp = (struct udp_header *)(pktBuf + sizeof(struct eth_header) + ip_len);
 			if (htons(udp->sport) == PORT_DNS) {
-				printf("UDP sport: %hu, dport: %hu\n", ntohs(udp->sport), ntohs(udp->dport));
+			   printf("UDP sport: %hu, dport: %hu\n", ntohs(udp->sport), ntohs(udp->dport));
 				
 				sem_wait(semaphores[SEM_EMPTY]);
 				sem_wait(semaphores[SEM_MUTEX]);			
 
-				print_buf(pktBuf);
 				enqueue(queue, pktBuf);				
-	
+
 				sem_post(semaphores[SEM_MUTEX]);
 				sem_post(semaphores[SEM_FULL]);			
 			}
@@ -317,10 +316,39 @@ int compare_ip(char *target, u_char *cur_ip) {
 }
 
 /* Reads dns packets from buffer and respond */
-int dns_sender(sem_t **semaphores, int smem_id) {
-	u_char *item = (u_char *)calloc(MAX_PACKET_LEN+5, 1);
+int dns_sender(char *interface, sem_t **semaphores, int smem_id, char *targer) {
+	/*protocol headers*/
+	struct dns_header *dns; 
+	/*shared mem*/
 	char *smem_ptr = smem_ptr = get_smem_ptr(smem_id); 
+	/*socket vars*/
+	int sockfd;
+	struct ifreq ifr;
+	/*packet buffers*/
+	u_char *queue_item = (u_char *)calloc(MAX_PACKET_LEN+5, 1);
+	u_char *response = (u_char *)calloc(MAX_PACKET_LEN, 1);
 
+   if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
+      perror("Sender socket failed.");
+      exit(EXIT_FAILURE);
+   }
+
+   /* Set our ifr struct family to IPV4 */
+   ifr.ifr_addr.sa_family = AF_INET;
+   /* Copy interface name to ifr_name */
+   strncpy(ifr.ifr_name, interface, IFNAMSIZ-1);
+
+   /* IOCTL:
+      SIOGIFADDR gets an interface addr
+      SIOCSIFADDR sets an interface addr
+      SIOCGHWADDR gets locak HW addr
+    */
+   if (ioctl(sockfd, SIOCGIFHWADDR, (char *)&ifr) < 0) {
+      perror("ioctl");
+      exit(EXIT_SUCCESS);
+   }
+
+   /* Set our ifr struct family to IPV4 */
 	//signal(SIGHUP, sigproc);	
 	prctl(PR_SET_PDEATHSIG, SIGHUP);
 	
@@ -328,14 +356,29 @@ int dns_sender(sem_t **semaphores, int smem_id) {
 		sem_wait(semaphores[SEM_FULL]);
 		sem_wait(semaphores[SEM_MUTEX]);
 
-		dequeue((struct queue *)smem_ptr, item);
-		print_buf(item);
-
+		dequeue((struct queue *)smem_ptr, queue_item);
+		
 		sem_post(semaphores[SEM_MUTEX]);
 		sem_post(semaphores[SEM_EMPTY]);
+		
+		dns = (struct dns_header *)get_dns_ptr((u_char *)queue_item);
+		build_dns(queue_item, response);
 	}
 
 	return 0;
+}
+
+u_char *get_dns_ptr(u_char *pkt_buf) {
+		int ip_len;
+		struct ip_header *ip;
+		struct udp_header *udp;
+
+		ip = (struct ip_header *)(pkt_buf + sizeof(struct eth_header));
+		ip_len = 4 * ((ip->ver) & 0x0f);		
+		
+		udp = (struct udp_header *)(pkt_buf + sizeof(struct eth_header) + ip_len);
+				
+		return (u_char *)(udp+sizeof(struct udp_header));
 }
 
 void print_buf(u_char *pkt) {
@@ -347,10 +390,18 @@ void print_buf(u_char *pkt) {
 	printf("\n");
 }
 
-/* */
-int build_dns() {
-	return 0;
+void build_dns(u_char *queue_item, u_char *response) {
+	struct eth_header *eth;
+	struct ip_header *ip;
+	struct udp_header *udp;
+	struct dns_header *dns;
+
+
+	eth = (struct eth_header *)response;
+	ip = (struct ip_header *)(response + sizeof(struct eth_header));
 }
+
+
 
 int send_dns() {
 	return 0;

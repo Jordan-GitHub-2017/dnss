@@ -20,7 +20,7 @@
 #define SEM_FULL			2
 
 /*Shared memory segment*/
-#define SMEM_KEY 			"/home/caleb/dev/c/dnss/dnss/src/dnss"
+#define SMEM_KEY 			"/home/caleb/Dev/c/dnss/src/dnss.c"
 #define SMEM_KEYID		'c'
 
 struct eth_header {

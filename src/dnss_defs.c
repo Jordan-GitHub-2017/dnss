@@ -1,10 +1,11 @@
 int init_semaphores(sem_t **); 
 int compare_ip(char *, u_char *); 
 int send_dns();
-int build_dns(); 
 void print_usage();
 int init_packet_buffer(struct queue *);
 int free_packet_buffer(char **); 
-int dns_sender(sem_t **, int);
+int dns_sender(char *, sem_t **, int, char *);
 void print_buf(u_char *);
-int dns_listener(char *, char *, sem_t **, int); 
+int dns_listener(char *, char *, sem_t **, int);
+void build_dns(u_char *, u_char *);
+u_char *get_dns_ptr(u_char *); 

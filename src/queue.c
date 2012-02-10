@@ -15,18 +15,17 @@ int enqueue(struct queue *qp, u_char *data) {
 	int val = -1;
 
 	if (!is_full(qp)) {
-		strncpy((char *)(qp->element + (qp->tail*MAX_PACKET_LEN)), (char *)data, qp->size);
+		memcpy((char *)(qp->element + qp->tail*MAX_PACKET_LEN), (char *)data, qp->size);
 		
 		qp->count++;
 		qp->tail++;	
 	
-		printf("Enqueued elem: tail: %d count: %d head: %d\n\n", qp->tail, qp->count, qp->head);
 		if (qp->tail == MAX_PACKET_CT) 
 			qp->tail = 0;
 
 		val = 0;	
-	}else 
-		printf("FULL"); 
+	}else
+		fprintf(stderr, "Error queue full, can not enqueue!");
 	
 	return val;
 }
@@ -34,20 +33,19 @@ int enqueue(struct queue *qp, u_char *data) {
 int dequeue(struct queue *qp, u_char *data) {
 	int val = -1;
 
-
 	if (!is_empty(qp)) {
-		strncpy((char *)data, (char *)(qp->element + (qp->head * MAX_PACKET_LEN)), qp->size); 
-		
+		memcpy((char *)data, (char *)(qp->element + (qp->head * MAX_PACKET_LEN)), qp->size); 
+		memset((char *)(qp->element + (qp->head * MAX_PACKET_LEN)), 0, qp->size); 
+
 		qp->count--;
 		qp->head++;
-
-		printf("Dequeued elem: size: %d head: %d count: %d tail: %d\n", qp->size, qp->head, qp->count, qp->head);
+		
 		if (qp->head == MAX_PACKET_CT) 
 			qp->head = 0;
 
 		val = 0;
 	}else
-		printf("EMPTY");
+		fprintf(stderr, "Error queue empty, can not dequeue!");
 
 	return val;
 }
