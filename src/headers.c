@@ -20,8 +20,10 @@
 #define SEM_FULL			2
 
 /*Shared memory segment*/
-#define SMEM_KEY 			"/home/caleb/Dev/c/dnss/src/dnss.c"
+#define SMEM_KEY 		"/home/caleb/dev/c/dnss/dnss/src"	
 #define SMEM_KEYID		'c'
+
+#define SIZE_MAC 			6
 
 struct eth_header {
 	uint32_t dmac;
@@ -39,7 +41,7 @@ struct ip_header{
    uint16_t frg_offset;
    u_char TTL;
    u_char protocol;
-   uint16_t chksum;
+   uint16_t cksum;
    u_char sip[4];
    u_char dip[4];
 }__attribute__((packed));
@@ -53,7 +55,7 @@ struct udp_header{
 
 struct dns_header{ 
    uint16_t transID;
-   uint8_t  codesFlags;
+   uint16_t  codesFlags;
    uint16_t totalQuestions;
    uint16_t totalAnswers;
 }__attribute__((packed));

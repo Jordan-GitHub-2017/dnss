@@ -8,4 +8,4 @@ int dns_sender(char *, sem_t **, int, char *);
 void print_buf(u_char *);
 int dns_listener(char *, char *, sem_t **, int);
 void build_dns(u_char *, u_char *);
-u_char *get_dns_ptr(u_char *); 
+struct udp_header *get_udp_ptr(u_char *); 
